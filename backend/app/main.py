@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.models.segment import Segment, TravelMode, TripSegments
@@ -19,6 +20,14 @@ from app.providers.registry import build_default_registry
 from app.services.orchestrator import LegRequest, TripOrchestrator
 
 app = FastAPI(title="Trip Planner API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 registry = build_default_registry()
 orchestrator = TripOrchestrator(registry)
 

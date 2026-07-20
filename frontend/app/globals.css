@@ -1,0 +1,47 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+:root {
+  --paper: #F4F6F5;
+  --ink: #12181B;
+  --ink-soft: #4B5A5E;
+  --line: #D8DEDC;
+  --route: #1B6B63;
+  --route-soft: #E4EFED;
+  --amber: #B4632A;
+  --amber-soft: #F6E9DD;
+  --signal: #2E7D4F;
+  --signal-soft: #E3F1E7;
+  --card: #FFFFFF;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-line: var(--line);
+  --color-route: var(--route);
+  --color-route-soft: var(--route-soft);
+  --color-amber: var(--amber);
+  --color-amber-soft: var(--amber-soft);
+  --color-signal: var(--signal);
+  --color-signal-soft: var(--signal-soft);
+  --color-card: var(--card);
+  --font-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+}
+
+/* Perforated divider between a segment card's info and its stub —
+   the boarding-pass reference is the one deliberate signature element;
+   everything else stays quiet so this doesn't compete with itself. */
+.ticket-notch {
+  background-image: radial-gradient(circle, var(--paper) 3px, transparent 3px);
+  background-size: 12px 12px;
+  background-position: center;
+}
