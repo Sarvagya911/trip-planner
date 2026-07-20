@@ -15,6 +15,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.models.segment import Segment, TravelMode, TripSegments
+from app.models.conversation import (
+    ConversationRequest,
+    ConversationResponse,
+)
 from app.providers.base import PartyComposition
 from app.providers.registry import build_default_registry
 from app.services.orchestrator import LegRequest, TripOrchestrator
@@ -30,6 +34,18 @@ app.add_middleware(
 
 registry = build_default_registry()
 orchestrator = TripOrchestrator(registry)
+
+# Conversation service is created lazily so the app still boots (and the
+# trip-planning endpoints still work) even if no GEMINI_API_KEY is set yet.
+_conversation_service = None
+
+
+def get_conversation_service():
+    global _conversation_service
+    if _conversation_service is None:
+        from app.services.conversation import ConversationService
+        _conversation_service = ConversationService()
+    return _conversation_service
 
 
 class SegmentSearchRequest(BaseModel):
@@ -88,9 +104,7 @@ class TripPlanResponse(BaseModel):
 @app.post("/api/v1/trip/plan", response_model=TripPlanResponse)
 async def plan_trip(req: TripPlanRequest) -> TripPlanResponse:
     """Plan a full multi-mode trip: one leg per entry in `legs`, stitched
-    into an ordered TripSegments. This is the mixed-mode endpoint —
-    e.g. a flight leg followed by a driving leg followed by a train leg,
-    all in one request."""
+    into an ordered TripSegments."""
     party = PartyComposition(
         adults=req.adults,
         children=req.children,
@@ -105,6 +119,24 @@ async def plan_trip(req: TripPlanRequest) -> TripPlanResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return TripPlanResponse(trip=result.trip, warnings=result.warnings)
+
+
+@app.post("/api/v1/conversation", response_model=ConversationResponse)
+async def conversation(req: ConversationRequest) -> ConversationResponse:
+    """Hold a planning conversation. The frontend sends the full message
+    history plus the structured brief so far; we return the assistant's
+    reply and an updated brief. Stateless — no server-side session store."""
+    try:
+        service = get_conversation_service()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"conversation service unavailable: {exc}") from exc
+
+    try:
+        reply, brief = await service.respond(req.messages, req.brief)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"conversation failed: {exc}") from exc
+
+    return ConversationResponse(reply=reply, brief=brief)
 
 
 @app.get("/api/v1/health")
