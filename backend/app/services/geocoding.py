@@ -2,15 +2,18 @@
 Shared geocoding + distance service.
 
 Both the driving provider and the rough-estimate providers (flight, bus)
-need to turn a place name into coordinates. Rather than each one carrying
-its own geocoding logic, they share this service. It's built on ORS's
-Pelias geocoder (already in use for driving) so there's no new API
+need to turn a place name into coordinates. They share this service, built
+on ORS's Pelias geocoder (already in use elsewhere) so there's no new API
 dependency.
 
+Geocoding is biased toward India and toward populated-place layers
+(localities, boroughs, etc.) rather than raw region centroids. Region names
+like "Coorg" otherwise resolve to a district centroid that can land off any
+road, which breaks routing — preferring locality layers snaps to a town
+center that's actually routable.
+
 Results are cached in-memory per process: place names repeat constantly
-within a session (the destination of one leg is the origin of the next),
-and geocoding the same string twice is wasteful and eats into the ORS
-free-tier quota.
+within a session (the destination of one leg is the origin of the next).
 """
 
 from __future__ import annotations
@@ -21,6 +24,8 @@ import os
 import httpx
 
 ORS_GEOCODE_URL = "https://api.openrouteservice.org/geocode/search"
+# Prefer populated places over regions/counties so we get a routable point.
+PREFERRED_LAYERS = "locality,borough,localadmin,county,region"
 
 
 class GeocodingError(Exception):
@@ -42,12 +47,30 @@ class GeocodingService:
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 ORS_GEOCODE_URL,
-                params={"api_key": self.api_key, "text": place_name, "size": 1},
+                params={
+                    "api_key": self.api_key,
+                    "text": place_name,
+                    "boundary.country": "IN",
+                    "layers": PREFERRED_LAYERS,
+                    "size": 1,
+                },
             )
             resp.raise_for_status()
             data = resp.json()
 
         features = data.get("features") or []
+        if not features:
+            # Retry once without the layer/country filters, in case the place
+            # is outside India or an unusual type.
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    ORS_GEOCODE_URL,
+                    params={"api_key": self.api_key, "text": place_name, "size": 1},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            features = data.get("features") or []
+
         if not features:
             raise GeocodingError(f"could not find coordinates for '{place_name}'")
 
@@ -57,19 +80,14 @@ class GeocodingService:
         return result
 
     async def distance_km(self, origin: str, destination: str) -> float:
-        """Great-circle (straight-line) distance between two place names.
-
-        This is a lower bound on real travel distance — good enough for a
-        rough flight/bus estimate, and honestly labeled as an estimate in
-        the UI. Driving uses ORS's real road routing instead; this is only
-        for modes where we don't have a routing engine."""
+        """Great-circle (straight-line) distance between two place names."""
         o_lon, o_lat = await self.geocode(origin)
         d_lon, d_lat = await self.geocode(destination)
         return _haversine_km(o_lat, o_lon, d_lat, d_lon)
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0  # earth radius km
+    r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlambda = math.radians(lon2 - lon1)
@@ -77,7 +95,6 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-# Shared singleton — one cache for the whole process.
 _default_service: GeocodingService | None = None
 
 

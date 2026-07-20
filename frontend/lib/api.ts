@@ -80,3 +80,74 @@ export async function planTrip(req: TripPlanRequest): Promise<TripPlanResponse> 
 
   return res.json();
 }
+
+// --- Conversation ---
+// Mirrors backend/app/models/conversation.py
+
+export interface BriefLeg {
+  mode: TravelMode;
+  origin: string;
+  destination: string;
+}
+
+export interface TripBrief {
+  origin: string | null;
+  depart_date: string | null;
+  return_date: string | null;
+  adults: number;
+  children: number;
+  elders: number;
+  has_pets: boolean;
+  budget_inr: number | null;
+  preferences: string[];
+  destinations: string[];
+  proposed_legs: BriefLeg[];
+  ready: boolean;
+}
+
+export interface ConversationMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ConversationRequest {
+  messages: ConversationMessage[];
+  brief: TripBrief;
+}
+
+export interface ConversationResponse {
+  reply: string;
+  brief: TripBrief;
+}
+
+export function emptyBrief(): TripBrief {
+  return {
+    origin: null,
+    depart_date: null,
+    return_date: null,
+    adults: 1,
+    children: 0,
+    elders: 0,
+    has_pets: false,
+    budget_inr: null,
+    preferences: [],
+    destinations: [],
+    proposed_legs: [],
+    ready: false,
+  };
+}
+
+export async function converse(req: ConversationRequest): Promise<ConversationResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/v1/conversation`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(req),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new ApiError(`Conversation failed (${res.status}): ${body}`, res.status);
+  }
+
+  return res.json();
+}
