@@ -1,9 +1,10 @@
 """
-Driving segment provider, backed by OpenRouteService (ORS).
+Driving segment provider, backed by OpenRouteService (ORS) for routing
+and the shared geocoding service for place -> coordinates.
 
-ORS is free-tier and OSM-based. Kept behind the SegmentProvider interface
-so it can be swapped for a self-hosted OSRM instance later purely by
-writing a new class and re-registering it — nothing else changes.
+Kept behind the SegmentProvider interface so it can be swapped for a
+self-hosted OSRM instance later purely by writing a new class and
+re-registering it — nothing else changes.
 """
 
 from __future__ import annotations
@@ -15,9 +16,9 @@ import httpx
 
 from app.models.segment import CostEstimate, Segment, SegmentStatus, TravelMode
 from app.providers.base import PartyComposition, SegmentProvider
+from app.services.geocoding import GeocodingError, get_geocoding_service
 
 ORS_BASE_URL = "https://api.openrouteservice.org/v2/directions/driving-car"
-# Rough fuel-cost heuristic for cost estimation before a live route is fetched.
 FUEL_COST_PER_KM_INR = 8.0
 
 
@@ -34,8 +35,12 @@ class DrivingProvider(SegmentProvider):
         depart_date: date,
         party: PartyComposition,
     ) -> list[Segment]:
-        origin_coords = await self._geocode(origin)
-        dest_coords = await self._geocode(destination)
+        geo = get_geocoding_service()
+        try:
+            origin_coords = await geo.geocode(origin)
+            dest_coords = await geo.geocode(destination)
+        except GeocodingError:
+            return []
 
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.get(
@@ -62,7 +67,7 @@ class DrivingProvider(SegmentProvider):
 
         return [
             Segment(
-                order=1,  # caller (orchestrator) reassigns real order in the full trip
+                order=1,
                 mode=self.mode,
                 status=SegmentStatus.ROUGH_ESTIMATE,
                 provider="ors",
@@ -83,21 +88,10 @@ class DrivingProvider(SegmentProvider):
         destination: str,
         party: PartyComposition,
     ) -> CostEstimate:
-        # Cheap path for the budget/suggestion step: avoid a full directions
-        # call, use a straight-line-distance-based heuristic instead.
-        # A real implementation would use a distance matrix endpoint;
-        # stubbed here since exact behavior depends on the geocoding provider.
-        raise NotImplementedError("wire up ORS matrix API or a geocoding-based haversine estimate")
-
-    async def _geocode(self, place_name: str) -> tuple[float, float]:
-        """Returns (lon, lat). Uses ORS's own geocoding endpoint (Pelias-based)
-        so we don't add a second provider dependency just for geocoding."""
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                "https://api.openrouteservice.org/geocode/search",
-                params={"api_key": self.api_key, "text": place_name, "size": 1},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-        coords = data["features"][0]["geometry"]["coordinates"]
-        return coords[0], coords[1]
+        # Cheap path for the budget/suggestion step: straight-line distance
+        # times a fuel heuristic, no full routing call.
+        distance_km = await get_geocoding_service().distance_km(origin, destination)
+        return CostEstimate(
+            low=distance_km * FUEL_COST_PER_KM_INR * 0.85,
+            high=distance_km * FUEL_COST_PER_KM_INR * 1.30,
+        )
