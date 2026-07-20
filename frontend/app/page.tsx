@@ -4,15 +4,18 @@ import { useState } from "react";
 import { AlertTriangle, MessageSquare, SlidersHorizontal } from "lucide-react";
 import { TripPlannerForm } from "@/components/TripPlannerForm";
 import { ChatPanel } from "@/components/ChatPanel";
+import { RefinePanel } from "@/components/RefinePanel";
 import { SegmentCard } from "@/components/SegmentCard";
 import { WhereToStay } from "@/components/WhereToStay";
 import {
   planTrip,
+  emptyBrief,
   ApiError,
   type TripPlanResponse,
   type LegInput,
   type BriefLeg,
   type TripBrief,
+  type ConversationMessage,
 } from "@/lib/api";
 
 type Mode = "chat" | "form";
@@ -23,27 +26,23 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function runPlan(params: {
-    legs: LegInput[];
-    departDate: string;
-    adults: number;
-    children: number;
-    elders: number;
-    hasPets: boolean;
-  }) {
+  const [activeBrief, setActiveBrief] = useState<TripBrief | null>(null);
+  const [activeMessages, setActiveMessages] = useState<ConversationMessage[]>([]);
+
+  async function runPlan(brief: TripBrief, legs: BriefLeg[]) {
     setLoading(true);
     setError(null);
-    setResult(null);
     try {
       const res = await planTrip({
-        legs: params.legs,
-        depart_date: params.departDate,
-        adults: params.adults,
-        children: params.children,
-        elders: params.elders,
-        has_pets: params.hasPets,
+        legs,
+        depart_date: brief.depart_date ?? new Date().toISOString().slice(0, 10),
+        adults: brief.adults,
+        children: brief.children,
+        elders: brief.elders,
+        has_pets: brief.has_pets,
       });
       setResult(res);
+      setActiveBrief(brief);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong reaching the planner.");
     } finally {
@@ -51,16 +50,38 @@ export default function Home() {
     }
   }
 
-  // When the chat's brief is ready, convert it into a plan request.
   function handleChatPlanReady(legs: BriefLeg[], brief: TripBrief) {
-    runPlan({
-      legs,
-      departDate: brief.depart_date ?? new Date().toISOString().slice(0, 10),
-      adults: brief.adults,
-      children: brief.children,
-      elders: brief.elders,
-      hasPets: brief.has_pets,
-    });
+    setActiveMessages([]);
+    runPlan(brief, legs);
+  }
+
+  function handleFormSubmit(params: {
+    legs: LegInput[];
+    departDate: string;
+    adults: number;
+    children: number;
+    elders: number;
+    hasPets: boolean;
+  }) {
+    const brief: TripBrief = {
+      ...emptyBrief(),
+      origin: params.legs[0]?.origin ?? null,
+      depart_date: params.departDate,
+      adults: params.adults,
+      children: params.children,
+      elders: params.elders,
+      has_pets: params.hasPets,
+      proposed_legs: params.legs,
+      destinations: params.legs.map((l) => l.destination),
+      ready: true,
+    };
+    setActiveMessages([]);
+    runPlan(brief, params.legs);
+  }
+
+  function handleReplan(legs: BriefLeg[], brief: TripBrief, messages: ConversationMessage[]) {
+    setActiveMessages(messages);
+    runPlan(brief, legs);
   }
 
   return (
@@ -73,7 +94,6 @@ export default function Home() {
         </p>
       </header>
 
-      {/* Mode toggle */}
       <div className="inline-flex rounded-lg border border-line bg-card p-1 mb-6">
         <button
           onClick={() => setMode("chat")}
@@ -96,7 +116,7 @@ export default function Home() {
       {mode === "chat" ? (
         <ChatPanel onPlanReady={handleChatPlanReady} />
       ) : (
-        <TripPlannerForm onSubmit={runPlan} loading={loading} />
+        <TripPlannerForm onSubmit={handleFormSubmit} loading={loading} />
       )}
 
       {error && (
@@ -106,7 +126,7 @@ export default function Home() {
         </div>
       )}
 
-      {loading && mode === "chat" && (
+      {loading && (
         <p className="mt-6 text-sm text-ink-soft">Planning your trip...</p>
       )}
 
@@ -120,6 +140,7 @@ export default function Home() {
               <SegmentCard key={seg.segment_id} segment={seg} />
             ))}
           </div>
+
           <WhereToStay destinations={result.destination_info} />
 
           {result.warnings.length > 0 && (
@@ -131,6 +152,14 @@ export default function Home() {
                 ))}
               </ul>
             </div>
+          )}
+
+          {activeBrief && (
+            <RefinePanel
+              brief={activeBrief}
+              messages={activeMessages}
+              onReplan={handleReplan}
+            />
           )}
         </div>
       )}

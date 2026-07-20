@@ -145,12 +145,14 @@
 Conversation service — the LLM layer (Groq via the OpenAI-compatible SDK).
 
 Groq's free tier is far more generous than Gemini's, and it's OpenAI-SDK
-compatible, so we point the OpenAI client at Groq's base URL. Everything
-else about this service is unchanged: each turn Gemini/Groq (1) writes a
-natural reply and (2) updates the structured TripBrief, returned together
-as one JSON object. The LLM decides intent, destinations, and modes; the
-brief's legs are priced later by the deterministic orchestrator — the
-model never states a distance or fare.
+compatible, so we point the OpenAI client at Groq's base URL. Each turn the
+model (1) writes a natural reply and (2) updates the structured TripBrief,
+returned together as one JSON object. The LLM decides intent, destinations,
+and modes; the brief's legs are priced later by the deterministic
+orchestrator — the model never states a distance or fare.
+
+Free-tier Gemini/Groq can return transient 5xx/429 errors, so we retry a few
+times with a short backoff before giving up.
 """
 
 from __future__ import annotations
@@ -170,7 +172,7 @@ MAX_RETRIES = 4
 RETRY_BACKOFF_SECONDS = 1.5
 
 SYSTEM_INSTRUCTION = """You are a friendly, concise travel planning assistant for an app that plans \
-multi-mode trips across India (driving, flights, trains, buses) — and can mix them in one trip.
+multi-mode trips across India (driving, flights, buses) — and can mix them in one trip.
 
 Your job each turn:
 1. Reply naturally and briefly (1-3 sentences). Ask for the single most important missing piece \
@@ -184,7 +186,7 @@ rough dates, how many people (adults/children/elders) and whether pets, budget, 
 
 Once you know the origin, at least one destination, and roughly who is travelling, propose concrete \
 legs (mode + origin + destination for each hop) and set ready=true. Choose sensible modes: flights \
-for long distances, driving/train/bus for shorter hops. You decide destinations and modes; you do NOT \
+for long distances, driving/bus for shorter hops. You decide destinations and modes; you do NOT \
 state distances, durations, or prices — the app calculates those separately.
 
 IMPORTANT: for each leg's origin and destination, use a specific, routable town or city name — never \
@@ -192,6 +194,10 @@ a broad region, district, or area. For example use "Madikeri" not "Coorg", "Mana
 "Gangtok" not "Sikkim". A named town routes correctly; a region does not. When suggesting a \
 destination in conversation you may use the familiar name, but in proposed_legs always use the \
 specific town.
+
+Do NOT propose train legs — train scheduling data isn't available yet, so a train leg cannot be \
+planned and will fail. Prefer driving, flights, or buses. If the user asks to avoid flights, use \
+bus or driving instead of train.
 
 Always respond with ONLY a JSON object, no markdown, in exactly this shape:
 {
@@ -207,13 +213,19 @@ Always respond with ONLY a JSON object, no markdown, in exactly this shape:
     "budget_inr": <int or null>,
     "preferences": [<string>, ...],
     "destinations": [<string>, ...],
-    "proposed_legs": [{"mode": "flight|train|bus|driving", "origin": <string>, "destination": <string>}, ...],
+    "proposed_legs": [{"mode": "flight|bus|driving", "origin": <string>, "destination": <string>}, ...],
     "ready": <bool>
   }
 }
 
 Carry forward everything already known in the brief you're given — only add or refine, never drop \
-information the user already provided."""
+information the user already provided.
+
+If the brief already has proposed_legs (the user is REFINING an existing plan, not starting fresh), \
+treat their message as an edit to that plan: adjust only what they ask for and keep the rest. When you \
+change something (swap a flight for a bus to save money, remove a leg, add a destination), say clearly \
+in your reply what you changed and why, in one short sentence. Keep ready=true when a valid plan still \
+exists after the edit."""
 
 
 class ConversationService:
