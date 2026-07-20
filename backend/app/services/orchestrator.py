@@ -1,17 +1,15 @@
 """
 Trip orchestrator: takes an ordered list of legs (each with its own mode,
 origin, destination) and calls the right provider for each one via the
-registry, producing one stitched TripSegments.
+registry, producing one stitched TripSegments — and now also enriches the
+trip's destinations with hotel suggestions.
 
 This is intentionally the ONLY place that knows how to go from "a list of
 legs the user wants" to "a validated multi-segment trip." It never imports
 a concrete provider directly — only the registry.
 
-Known simplification for this version (flagged, not hidden): all legs
-currently share one depart_date. Per-leg scheduling (leg 2 departs the
-day after leg 1 arrives) is real future work — see TODO below — but is
-deliberately out of scope for the first working orchestrator so the
-core stitching logic can be proven first.
+Destination enrichment (hotels) is best-effort: it runs after the legs are
+built, and any failure there never breaks the core plan.
 """
 
 from __future__ import annotations
@@ -19,9 +17,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
+from app.models.places import DestinationInfo
 from app.models.segment import Segment, TravelMode, TripSegments
 from app.providers.base import PartyComposition
 from app.providers.registry import ProviderRegistry
+from app.services.hotel_notes import annotate_hotels
+from app.services.places import get_places_service
 
 
 @dataclass
@@ -35,6 +36,7 @@ class LegRequest:
 class TripPlanResult:
     trip: TripSegments
     warnings: list[str] = field(default_factory=list)
+    destination_info: list[DestinationInfo] = field(default_factory=list)
 
 
 class TripOrchestrator:
@@ -46,6 +48,7 @@ class TripOrchestrator:
         legs: list[LegRequest],
         depart_date: date,
         party: PartyComposition,
+        include_hotels: bool = True,
     ) -> TripPlanResult:
         if not legs:
             raise ValueError("a trip must have at least one leg")
@@ -58,18 +61,12 @@ class TripOrchestrator:
             candidates = await provider.search(leg.origin, leg.destination, depart_date, party)
 
             if not candidates:
-                # Honest gap, not a fabricated segment. Most likely today:
-                # a train leg with no static-timetable match for this route.
                 warnings.append(
                     f"leg {i} ({leg.mode.value}: {leg.origin} -> {leg.destination}): "
                     f"no data found, omitted from trip"
                 )
                 continue
 
-            # Take the first candidate for now. Once the synthesis service
-            # (Gemini ranking step) exists, this is where it would rank
-            # `candidates` against user preferences instead of just
-            # taking index 0.
             chosen = candidates[0]
             chosen.order = i
             segments.append(chosen)
@@ -77,21 +74,61 @@ class TripOrchestrator:
         if not segments:
             raise ValueError("no data could be found for any leg of this trip")
 
-        # Re-number in case any legs were dropped, so order stays contiguous.
         for idx, seg in enumerate(segments, start=1):
             seg.order = idx
 
         warnings.extend(self._check_continuity(segments))
 
-        return TripPlanResult(trip=TripSegments(segments=segments), warnings=warnings)
+        destination_info: list[DestinationInfo] = []
+        if include_hotels:
+            destination_info = await self._enrich_destinations(segments)
+
+        return TripPlanResult(
+            trip=TripSegments(segments=segments),
+            warnings=warnings,
+            destination_info=destination_info,
+        )
+
+    async def _enrich_destinations(self, segments: list[Segment]) -> list[DestinationInfo]:
+        """Find hotels for each distinct destination in the trip, then batch-
+        annotate them with a short 'why' via one Groq call. Best-effort:
+        returns whatever succeeds, never raises."""
+        # The trip's starting point (first leg's origin) is "home" — don't
+        # suggest hotels there. Every other distinct destination is fair game,
+        # including a place you return from on a round trip.
+        home = segments[0].origin.strip().lower()
+        seen: set[str] = set()
+        destinations: list[str] = []
+        for s in segments:
+            d = s.destination.strip()
+            key = d.lower()
+            if key in seen or key == home:
+                continue
+            seen.add(key)
+            destinations.append(d)
+
+        places = get_places_service()
+        hotels_by_dest: dict[str, list] = {}
+        for dest in destinations:
+            hotels = await places.find_hotels(dest)
+            if hotels:
+                hotels_by_dest[dest] = hotels
+
+        if not hotels_by_dest:
+            return []
+
+        # One batched Groq call to add "why stay here" lines.
+        try:
+            await annotate_hotels(hotels_by_dest)
+        except Exception:
+            pass  # best-effort flavor; hotels still returned without notes
+
+        return [
+            DestinationInfo(destination=dest, hotels=hotels)
+            for dest, hotels in hotels_by_dest.items()
+        ]
 
     def _check_continuity(self, segments: list[Segment]) -> list[str]:
-        """Warn (don't fail) when one leg's destination doesn't obviously
-        match the next leg's origin — e.g. user typed 'Delhi Airport' for
-        one and 'New Delhi' for the next. This is a warning, not a hard
-        validation error, because place-name matching is inherently fuzzy;
-        a stricter geocoded-distance check is a good future improvement
-        (see TODO)."""
         warnings = []
         for a, b in zip(segments, segments[1:]):
             if a.destination.strip().lower() not in b.origin.strip().lower() and \
@@ -106,7 +143,5 @@ class TripOrchestrator:
 
 # TODO (future work, not done here):
 #   - Per-leg departure dates instead of one shared date across the whole trip
-#   - Minimum transfer buffer validation using real departure/arrival times
-#     where available (currently only rough string-matching on place names)
-#   - Multiple candidates per leg passed to the synthesis service for ranking
-#     instead of always taking candidates[0]
+#   - Restaurant enrichment (same pattern as hotels)
+#   - Mid-drive rest/fuel/food stops for long driving legs

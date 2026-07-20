@@ -40,6 +40,7 @@ export interface TripSegments {
 export interface TripPlanResponse {
   trip: TripSegments;
   warnings: string[];
+  destination_info: DestinationInfo[];
 }
 
 export interface LegInput {
@@ -150,4 +151,23 @@ export async function converse(req: ConversationRequest): Promise<ConversationRe
   }
 
   return res.json();
+}
+
+// --- Destination enrichment (hotels) ---
+// Mirrors backend/app/models/places.py
+
+export interface Place {
+  name: string;
+  category: string;
+  rating: number | null;
+  address: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  why: string | null;
+  book_external_url: string | null;
+}
+
+export interface DestinationInfo {
+  destination: string;
+  hotels: Place[];
 }

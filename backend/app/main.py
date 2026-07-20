@@ -19,6 +19,7 @@ from app.models.conversation import (
     ConversationRequest,
     ConversationResponse,
 )
+from app.models.places import DestinationInfo
 from app.providers.base import PartyComposition
 from app.providers.registry import build_default_registry
 from app.services.orchestrator import LegRequest, TripOrchestrator
@@ -36,7 +37,7 @@ registry = build_default_registry()
 orchestrator = TripOrchestrator(registry)
 
 # Conversation service is created lazily so the app still boots (and the
-# trip-planning endpoints still work) even if no GEMINI_API_KEY is set yet.
+# trip-planning endpoints still work) even if no GROQ_API_KEY is set yet.
 _conversation_service = None
 
 
@@ -99,12 +100,13 @@ class TripPlanRequest(BaseModel):
 class TripPlanResponse(BaseModel):
     trip: TripSegments
     warnings: list[str]
+    destination_info: list[DestinationInfo] = []
 
 
 @app.post("/api/v1/trip/plan", response_model=TripPlanResponse)
 async def plan_trip(req: TripPlanRequest) -> TripPlanResponse:
     """Plan a full multi-mode trip: one leg per entry in `legs`, stitched
-    into an ordered TripSegments."""
+    into an ordered TripSegments, with hotel suggestions per destination."""
     party = PartyComposition(
         adults=req.adults,
         children=req.children,
@@ -118,7 +120,11 @@ async def plan_trip(req: TripPlanRequest) -> TripPlanResponse:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return TripPlanResponse(trip=result.trip, warnings=result.warnings)
+    return TripPlanResponse(
+        trip=result.trip,
+        warnings=result.warnings,
+        destination_info=result.destination_info,
+    )
 
 
 @app.post("/api/v1/conversation", response_model=ConversationResponse)

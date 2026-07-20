@@ -5,6 +5,7 @@ import { AlertTriangle, MessageSquare, SlidersHorizontal } from "lucide-react";
 import { TripPlannerForm } from "@/components/TripPlannerForm";
 import { ChatPanel } from "@/components/ChatPanel";
 import { SegmentCard } from "@/components/SegmentCard";
+import { WhereToStay } from "@/components/WhereToStay";
 import {
   planTrip,
   ApiError,
@@ -119,6 +120,7 @@ export default function Home() {
               <SegmentCard key={seg.segment_id} segment={seg} />
             ))}
           </div>
+          <WhereToStay destinations={result.destination_info} />
 
           {result.warnings.length > 0 && (
             <div className="mt-6 bg-amber-soft border border-amber/30 rounded-lg p-4">
