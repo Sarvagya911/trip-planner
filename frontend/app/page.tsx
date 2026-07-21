@@ -6,6 +6,7 @@ import { TripPlannerForm } from "@/components/TripPlannerForm";
 import { ChatPanel } from "@/components/ChatPanel";
 import { RefinePanel } from "@/components/RefinePanel";
 import { SegmentCard } from "@/components/SegmentCard";
+import { RestStopStrip } from "@/components/RestStopStrip";
 import { WhereToStay } from "@/components/WhereToStay";
 import {
   planTrip,
@@ -16,6 +17,7 @@ import {
   type BriefLeg,
   type TripBrief,
   type ConversationMessage,
+  type RestStop,
 } from "@/lib/api";
 
 type Mode = "chat" | "form";
@@ -136,9 +138,15 @@ export default function Home() {
             Your itinerary
           </h2>
           <div className="space-y-3">
-            {result.trip.segments.map((seg) => (
-              <SegmentCard key={seg.segment_id} segment={seg} />
-            ))}
+            {result.trip.segments.map((seg) => {
+              const stop = (seg.provider_data as { stop?: RestStop })?.stop;
+              return (
+                <div key={seg.segment_id}>
+                  <SegmentCard segment={seg} />
+                  {stop && <RestStopStrip stop={stop} />}
+                </div>
+              );
+            })}
           </div>
 
           <WhereToStay destinations={result.destination_info} />

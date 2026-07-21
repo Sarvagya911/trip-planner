@@ -58,7 +58,7 @@ export interface TripPlanRequest {
   has_pets: boolean;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8002";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -170,4 +170,13 @@ export interface Place {
 export interface DestinationInfo {
   destination: string;
   hotels: Place[];
+}
+
+// A suggested rest stop on a long driving leg (rides in segment.provider_data.stop)
+export interface RestStop {
+  label: string;
+  near_latitude: number;
+  near_longitude: number;
+  fuel: Place | null;
+  food: Place | null;
 }

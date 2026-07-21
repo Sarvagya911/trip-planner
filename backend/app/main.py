@@ -148,3 +148,20 @@ async def conversation(req: ConversationRequest) -> ConversationResponse:
 @app.get("/api/v1/health")
 async def health() -> dict[str, object]:
     return {"status": "ok", "modes_available": [m.value for m in registry.all_modes()]}
+
+# @app.get("/api/v1/health")
+# async def health():
+#     print("A")
+#
+#     modes = registry.all_modes()
+#
+#     print("B", modes)
+#
+#     values = [m.value for m in modes]
+#
+#     print("C", values)
+#
+#     return {
+#         "status": "ok",
+#         "modes_available": values,
+#     }

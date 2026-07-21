@@ -1,18 +1,15 @@
 """
-Places service — finds hotels (and later restaurants) near a destination,
-backed by Foursquare Places API.
+Places service — finds hotels near a destination, and fuel/food near a point
+along a route, backed by Foursquare Places API.
 
 Uses only free-tier fields (name, location, geocodes) — NOT the Premium
-`rating` field, which consumes paid credits. Hotels are sorted by relevance
-(proximity), and the frontend notes that ratings aren't shown so users check
-reviews on the booking site first.
+`rating` field, which consumes paid credits.
 
 Behind a simple interface so a different provider (Google Places, etc.)
-could be swapped in later without touching the orchestrator. Uses the shared
-geocoding service to turn a destination name into coordinates.
+could be swapped in later without touching the orchestrator.
 
-Booking is external: each hotel links to a Google search that reliably
-surfaces that specific hotel with aggregated booking options.
+Finding is external: places link to a Google search that reliably surfaces
+the specific place with map/booking options.
 """
 
 from __future__ import annotations
@@ -27,8 +24,13 @@ from app.services.geocoding import GeocodingError, get_geocoding_service
 
 FSQ_SEARCH_URL = "https://places-api.foursquare.com/places/search"
 FSQ_API_VERSION = "2025-06-17"
-HOTEL_CATEGORY_ID = "4bf58dd8d48988d1fa931735"  # Foursquare "Hotel"
-SEARCH_RADIUS_M = 8000
+
+HOTEL_CATEGORY_ID = "4bf58dd8d48988d1fa931735"   # Hotel
+FUEL_CATEGORY_ID = "4bf58dd8d48988d113951735"    # Gas / fuel station
+FOOD_CATEGORY_ID = "4d4b7105d754a06374d81259"    # Food (top-level dining)
+
+HOTEL_RADIUS_M = 8000
+STOP_RADIUS_M = 15000
 DEFAULT_LIMIT = 4
 
 
@@ -37,24 +39,69 @@ class PlacesService:
         self.api_key = api_key or os.environ.get("FOURSQUARE_API_KEY", "")
 
     async def find_hotels(self, destination: str, limit: int = DEFAULT_LIMIT) -> list[Place]:
-        """Find hotels near a destination. Returns [] on any failure
-        (geocoding miss, API error, exhausted credits) rather than raising —
-        an enrichment feature must never break the core trip plan."""
+        """Find hotels near a destination (by name). Returns [] on failure."""
         try:
             lon, lat = await get_geocoding_service().geocode(destination)
         except GeocodingError:
             return []
+        results = await self._search(lat, lon, HOTEL_CATEGORY_ID, HOTEL_RADIUS_M)
+        hotels: list[Place] = []
+        seen: set[str] = set()
+        for r in results:
+            name = (r.get("name") or "").strip()
+            if not name or name.lower() in seen:
+                continue
+            seen.add(name.lower())
+            loc = r.get("location", {}) or {}
+            geo = (r.get("geocodes", {}) or {}).get("main", {}) or {}
+            hotels.append(Place(
+                name=name,
+                category="hotel",
+                rating=None,
+                address=loc.get("formatted_address") or loc.get("address"),
+                latitude=geo.get("latitude"),
+                longitude=geo.get("longitude"),
+                book_external_url=_google_find_link(name, destination),
+            ))
+            if len(hotels) >= limit:
+                break
+        return hotels
 
+    async def find_one_near(self, lat: float, lon: float, category: str) -> Place | None:
+        """Find the single nearest place of a category to a coordinate.
+        Used for fuel/food along a route. Returns None on failure/none-found."""
+        cat_id = FUEL_CATEGORY_ID if category == "fuel" else FOOD_CATEGORY_ID
+        results = await self._search(lat, lon, cat_id, STOP_RADIUS_M, sort="DISTANCE")
+        for r in results:
+            name = (r.get("name") or "").strip()
+            if not name:
+                continue
+            loc = r.get("location", {}) or {}
+            geo = (r.get("geocodes", {}) or {}).get("main", {}) or {}
+            addr = loc.get("formatted_address") or loc.get("address")
+            return Place(
+                name=name,
+                category=category,
+                rating=None,
+                address=addr,
+                latitude=geo.get("latitude"),
+                longitude=geo.get("longitude"),
+                book_external_url=_google_find_link(name, addr or ""),
+            )
+        return None
+
+    async def _search(self, lat: float, lon: float, cat_id: str, radius: int, sort: str = "RELEVANCE") -> list[dict]:
+        """Raw Foursquare search. Returns [] on any error (best-effort)."""
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.get(
                     FSQ_SEARCH_URL,
                     params={
                         "ll": f"{lat},{lon}",
-                        "radius": SEARCH_RADIUS_M,
-                        "fsq_category_ids": HOTEL_CATEGORY_ID,
-                        "limit": 20,          # over-fetch, we dedupe + trim
-                        "sort": "RELEVANCE",
+                        "radius": radius,
+                        "fsq_category_ids": cat_id,
+                        "limit": 10,
+                        "sort": sort,
                     },
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
@@ -63,45 +110,13 @@ class PlacesService:
                     },
                 )
                 resp.raise_for_status()
-                data = resp.json()
+                return resp.json().get("results", [])
         except httpx.HTTPError:
             return []
 
-        results = data.get("results", [])
-        hotels: list[Place] = []
-        seen: set[str] = set()
-        for r in results:
-            name = (r.get("name") or "").strip()
-            if not name or name.lower() in seen:
-                continue
-            seen.add(name.lower())
 
-            loc = r.get("location", {}) or {}
-            address = loc.get("formatted_address") or loc.get("address")
-            geo = (r.get("geocodes", {}) or {}).get("main", {}) or {}
-            place = Place(
-                name=name,
-                category="hotel",
-                rating=None,  # free tier: no ratings — frontend notes this
-                address=address,
-                latitude=geo.get("latitude"),
-                longitude=geo.get("longitude"),
-                book_external_url=_booking_deep_link(name, destination),
-            )
-            hotels.append(place)
-            if len(hotels) >= limit:
-                break
-
-        return hotels
-
-
-def _booking_deep_link(hotel_name: str, destination: str) -> str:
-    # Booking.com doesn't offer reliable non-affiliate deep links to a
-    # specific hotel — its search URL often lands on the homepage. A Google
-    # search for the hotel reliably surfaces that hotel's info panel with
-    # booking options aggregated (Booking, MakeMyTrip, Agoda, etc.), which
-    # is more robust and gives the user more choice.
-    q = quote_plus(f"{hotel_name} {destination} hotel")
+def _google_find_link(name: str, context: str) -> str:
+    q = quote_plus(f"{name} {context}".strip())
     return f"https://www.google.com/search?q={q}"
 
 
