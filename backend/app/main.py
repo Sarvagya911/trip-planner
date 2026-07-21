@@ -21,6 +21,7 @@ from app.models.conversation import (
 )
 from app.models.places import DestinationInfo
 from app.services.journey_videos import get_mode_video
+from app.services.destination_photos import search_photo
 from app.providers.base import PartyComposition
 from app.providers.registry import build_default_registry
 from app.services.orchestrator import LegRequest, TripOrchestrator
@@ -152,6 +153,15 @@ async def journey_video(mode: str) -> dict[str, str | None]:
     bus, flight, train), used for the immersive journey-progress hero.
     Best-effort — returns {"url": null} if unavailable rather than erroring."""
     url = await get_mode_video(mode)
+    return {"url": url}
+
+
+@app.get("/api/v1/scenic-photo")
+async def scenic_photo(query: str = "mountains scenic landscape") -> dict[str, str | None]:
+    """Returns a generic scenic photo URL for page-background atmosphere
+    (not tied to a specific trip destination). Best-effort — returns
+    {"url": null} if unavailable rather than erroring."""
+    url = await search_photo(query)
     return {"url": url}
 
 

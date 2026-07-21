@@ -1,184 +1,190 @@
 "use client";
 
-import { useState } from "react";
-import { AlertTriangle, MessageSquare, SlidersHorizontal } from "lucide-react";
-import { TripPlannerForm } from "@/components/TripPlannerForm";
-import { ChatPanel } from "@/components/ChatPanel";
-import { RefinePanel } from "@/components/RefinePanel";
-import { SegmentCard } from "@/components/SegmentCard";
-import { RestStopStrip } from "@/components/RestStopStrip";
-import { RouteMap } from "@/components/RouteMap";
-import { JourneyHero } from "@/components/JourneyHero";
-import { WhereToStay } from "@/components/WhereToStay";
+import Link from "next/link";
+import { motion } from "motion/react";
 import {
-  planTrip,
-  emptyBrief,
-  ApiError,
-  type TripPlanResponse,
-  type LegInput,
-  type BriefLeg,
-  type TripBrief,
-  type ConversationMessage,
-  type RestStop,
-} from "@/lib/api";
+  ArrowRight,
+  MessageSquare,
+  Building2,
+  Map as MapIcon,
+  Fuel,
+  Wand2,
+  Navigation,
+} from "lucide-react";
 
-type Mode = "chat" | "form";
+const FEATURES = [
+  {
+    icon: MessageSquare,
+    title: "Just describe your trip",
+    body: "Tell it where you're starting from, who's coming, and the kind of place you want. It asks the right follow-ups and suggests destinations if you're not sure.",
+  },
+  {
+    icon: MapIcon,
+    title: "See the whole route",
+    body: "A real map of your driving route, plus a cinematic journey view that tracks your progress and shifts scenery to match your mode of travel.",
+  },
+  {
+    icon: Building2,
+    title: "Hotels, sorted",
+    body: "Real nearby hotels for every destination, with an honest note on each and a one-tap link to book — no invented ratings, just what's actually there.",
+  },
+  {
+    icon: Fuel,
+    title: "Built-in rest stops",
+    body: "Long drive? It finds a fuel stop and a place to eat around the halfway point, so the whole trip is planned — not just the destination.",
+  },
+  {
+    icon: Wand2,
+    title: "Change your mind anytime",
+    body: "\"Make it cheaper.\" \"Avoid flights.\" \"I have a dog.\" Keep talking after the plan exists and it adjusts — and tells you exactly what changed.",
+  },
+  {
+    icon: Navigation,
+    title: "One tap to go",
+    body: "When it's time to leave, a single tap opens turn-by-turn navigation in Google or Apple Maps — no re-typing your route anywhere else.",
+  },
+];
 
-export default function Home() {
-  const [mode, setMode] = useState<Mode>("chat");
-  const [result, setResult] = useState<TripPlanResponse | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const [activeBrief, setActiveBrief] = useState<TripBrief | null>(null);
-  const [activeMessages, setActiveMessages] = useState<ConversationMessage[]>([]);
-
-  async function runPlan(brief: TripBrief, legs: BriefLeg[]) {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await planTrip({
-        legs,
-        depart_date: brief.depart_date ?? new Date().toISOString().slice(0, 10),
-        adults: brief.adults,
-        children: brief.children,
-        elders: brief.elders,
-        has_pets: brief.has_pets,
-      });
-      setResult(res);
-      setActiveBrief(brief);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong reaching the planner.");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleChatPlanReady(legs: BriefLeg[], brief: TripBrief) {
-    setActiveMessages([]);
-    runPlan(brief, legs);
-  }
-
-  function handleFormSubmit(params: {
-    legs: LegInput[];
-    departDate: string;
-    adults: number;
-    children: number;
-    elders: number;
-    hasPets: boolean;
-  }) {
-    const brief: TripBrief = {
-      ...emptyBrief(),
-      origin: params.legs[0]?.origin ?? null,
-      depart_date: params.departDate,
-      adults: params.adults,
-      children: params.children,
-      elders: params.elders,
-      has_pets: params.hasPets,
-      proposed_legs: params.legs,
-      destinations: params.legs.map((l) => l.destination),
-      ready: true,
-    };
-    setActiveMessages([]);
-    runPlan(brief, params.legs);
-  }
-
-  function handleReplan(legs: BriefLeg[], brief: TripBrief, messages: ConversationMessage[]) {
-    setActiveMessages(messages);
-    runPlan(brief, legs);
-  }
-
+function FadeUp({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
   return (
-    <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-10 sm:py-16">
-      <header className="mb-6">
-        <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Trip Planner</h1>
-        <p className="text-ink-soft mt-1 text-sm sm:text-base">
-          Mix driving, flights, trains, and buses into one itinerary. Every leg is labeled honestly —
-          live data where we have it, estimates where we don&apos;t.
-        </p>
-      </header>
+    <motion.div
+      initial={{ opacity: 0, y: 28 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.6, delay, ease: "easeOut" }}
+    >
+      {children}
+    </motion.div>
+  );
+}
 
-      <div className="inline-flex rounded-lg border border-line bg-card p-1 mb-6">
-        <button
-          onClick={() => setMode("chat")}
-          className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-md transition ${
-            mode === "chat" ? "bg-route text-white" : "text-ink-soft hover:text-ink"
-          }`}
-        >
-          <MessageSquare size={15} /> Chat
-        </button>
-        <button
-          onClick={() => setMode("form")}
-          className={`inline-flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-md transition ${
-            mode === "form" ? "bg-route text-white" : "text-ink-soft hover:text-ink"
-          }`}
-        >
-          <SlidersHorizontal size={15} /> Manual
-        </button>
-      </div>
+export default function HomePage() {
+  return (
+    <main className="flex-1">
+      {/* Hero */}
+      <section className="relative h-screen min-h-[640px] w-full overflow-hidden">
+        <video autoPlay muted loop playsInline className="absolute inset-0 w-full h-full object-cover">
+          <source src="https://cdn.pixabay.com/video/2022/10/05/133699-757782422_medium.mp4" type="video/mp4" />
+        </video>
+        <div
+          className="absolute inset-0"
+          style={{
+            background:
+              "linear-gradient(180deg, rgba(4,20,40,0.55) 0%, rgba(4,20,40,0.35) 45%, rgba(4,20,40,0.85) 100%)",
+          }}
+        />
 
-      {mode === "chat" ? (
-        <ChatPanel onPlanReady={handleChatPlanReady} />
-      ) : (
-        <TripPlannerForm onSubmit={handleFormSubmit} loading={loading} />
-      )}
-
-      {error && (
-        <div className="mt-6 flex items-start gap-2 bg-amber-soft border border-amber/30 rounded-lg p-4 text-sm">
-          <AlertTriangle size={18} className="text-amber shrink-0 mt-0.5" />
-          <p>{error}</p>
+        <div className="relative h-full flex flex-col items-center justify-center text-center px-6">
+          <motion.p
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7 }}
+            className="text-white/80 text-sm uppercase tracking-[0.2em] mb-4"
+          >
+            Every trip, one place
+          </motion.p>
+          <motion.h1
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.1 }}
+            className="text-white text-5xl sm:text-6xl md:text-7xl font-semibold tracking-tight max-w-3xl leading-[1.05]"
+          >
+            Plan it. Watch it come together.
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+            className="text-white/85 text-lg mt-6 max-w-xl"
+          >
+            Describe a trip in plain language and get a full itinerary — driving,
+            flights, and buses, mixed as needed — with hotels, rest stops, and a
+            map, all in one place.
+          </motion.p>
+          <motion.div
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.3 }}
+            className="mt-9"
+          >
+            <Link href="/plan" className="inline-flex items-center gap-2 bg-white text-ink font-medium px-7 py-3.5 rounded-full hover:bg-white/90 transition">
+              Start planning <ArrowRight size={18} />
+            </Link>
+          </motion.div>
         </div>
-      )}
 
-      {loading && (
-        <p className="mt-6 text-sm text-ink-soft">Planning your trip...</p>
-      )}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 1, duration: 0.8 }}
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/70 text-xs uppercase tracking-widest"
+        >
+          Scroll
+        </motion.div>
+      </section>
 
-      {result && (
-        <div className="mt-10">
-          <div className="mb-8">
-            <JourneyHero segments={result.trip.segments} departDate={activeBrief?.depart_date ?? null} />
-          </div>
+      {/* Feature grid */}
+      <section
+        className="relative overflow-hidden py-28"
+        style={{ background: "linear-gradient(180deg, #2D1F4A 0%, #4A2F5C 55%, #6B3A52 100%)" }}
+      >
+        <div className="absolute rounded-full pointer-events-none" style={{ top: -100, right: -80, width: 320, height: 320, background: "radial-gradient(circle, rgba(240,184,122,0.12) 0%, transparent 70%)" }} />
+        <div className="absolute rounded-full pointer-events-none" style={{ bottom: -120, left: -70, width: 300, height: 300, background: "radial-gradient(circle, rgba(201,166,232,0.10) 0%, transparent 70%)" }} />
 
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft mb-3">
-            Your itinerary
-          </h2>
-          <div className="space-y-3">
-            {result.trip.segments.map((seg) => {
-              const stop = (seg.provider_data as { stop?: RestStop })?.stop;
-              return (
-                <div key={seg.segment_id}>
-                  <SegmentCard segment={seg} />
-                  {stop && <RestStopStrip stop={stop} />}
+        <div className="relative max-w-6xl mx-auto px-6">
+          <FadeUp>
+            <p className="font-medium text-sm uppercase tracking-wide mb-3" style={{ color: "#F0B87A" }}>
+              What it does
+            </p>
+            <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight max-w-xl mb-16 text-white">
+              Everything a trip needs, worked out before you leave.
+            </h2>
+          </FadeUp>
+
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {FEATURES.map((f, i) => (
+              <FadeUp key={f.title} delay={i * 0.08}>
+                <div
+                  className="rounded-2xl p-6 h-full"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    backdropFilter: "blur(14px)",
+                    border: "0.5px solid rgba(255,255,255,0.15)",
+                    boxShadow: "0 16px 32px -14px rgba(20,10,35,0.4)",
+                  }}
+                >
+                  <div
+                    className="w-11 h-11 rounded-xl flex items-center justify-center mb-5"
+                    style={{ background: "linear-gradient(135deg, #F0B87A, #D97A4A)" }}
+                  >
+                    <f.icon size={20} className="text-[#3A1F0A]" />
+                  </div>
+                  <h3 className="font-medium text-lg mb-2 text-white">{f.title}</h3>
+                  <p className="text-white/65 text-sm leading-relaxed">{f.body}</p>
                 </div>
-              );
-            })}
+              </FadeUp>
+            ))}
           </div>
-
-          <RouteMap segments={result.trip.segments} />
-
-          <WhereToStay destinations={result.destination_info} />
-
-          {result.warnings.length > 0 && (
-            <div className="mt-6 bg-amber-soft border border-amber/30 rounded-lg p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-amber mb-2">Heads up</p>
-              <ul className="text-sm space-y-1 text-ink-soft">
-                {result.warnings.map((w, i) => (
-                  <li key={i}>&bull; {w}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {activeBrief && (
-            <RefinePanel
-              brief={activeBrief}
-              messages={activeMessages}
-              onReplan={handleReplan}
-            />
-          )}
         </div>
-      )}
+      </section>
+
+      {/* CTA band */}
+      <section className="relative overflow-hidden py-28">
+        <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, #6B3A52 0%, #8C4A4A 100%)" }} />
+        <div className="relative max-w-2xl mx-auto text-center px-6">
+          <FadeUp>
+            <h2 className="text-3xl sm:text-4xl font-semibold text-white mb-5">
+              Where to next?
+            </h2>
+            <p className="text-white/85 mb-9">
+              Tell it where you&apos;re starting from — the rest comes together as you talk.
+            </p>
+            <Link href="/plan" className="inline-flex items-center gap-2 font-medium px-7 py-3.5 rounded-full hover:opacity-90 transition text-[#3A1F0A]" style={{ background: "linear-gradient(135deg, #F0B87A, #D97A4A)" }}>
+              Plan a trip <ArrowRight size={18} />
+            </Link>
+          </FadeUp>
+        </div>
+      </section>
     </main>
   );
 }

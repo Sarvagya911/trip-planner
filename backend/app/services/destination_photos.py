@@ -1,13 +1,14 @@
 """
-Destination hero photos, backed by Unsplash's free API.
+Photo lookup backed by Unsplash's free API.
 
-This is intentionally NOT used for individual hotels — showing a generic
+Used for two things: destination hero photos (WhereToStay — "what does
+Madikeri look like") and a generic scenic background photo for the plan
+page's atmosphere. Never used for individual hotels — showing a generic
 stock photo next to a specific hotel name would misleadingly imply it's a
-real photo of that building. It's honest and useful for a destination
-("what does Madikeri look like"), which is what this is scoped to.
+real photo of that building.
 
 Best-effort: any failure (no key, rate limit, no results) returns None
-rather than raising, so a photo being unavailable never breaks the plan.
+rather than raising, so a missing photo never breaks the page.
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ import httpx
 UNSPLASH_SEARCH_URL = "https://api.unsplash.com/search/photos"
 
 
-async def get_destination_photo(destination: str) -> str | None:
-    """Return a photo URL for a destination, or None if unavailable."""
+async def search_photo(query: str) -> str | None:
+    """Return a landscape photo URL matching a search query, or None if
+    unavailable."""
     api_key = os.environ.get("UNSPLASH_ACCESS_KEY", "")
     if not api_key:
         return None
@@ -30,7 +32,7 @@ async def get_destination_photo(destination: str) -> str | None:
             resp = await client.get(
                 UNSPLASH_SEARCH_URL,
                 params={
-                    "query": f"{destination} India travel",
+                    "query": query,
                     "per_page": 1,
                     "orientation": "landscape",
                 },
@@ -47,3 +49,8 @@ async def get_destination_photo(destination: str) -> str | None:
 
     urls = results[0].get("urls", {})
     return urls.get("regular") or urls.get("small")
+
+
+async def get_destination_photo(destination: str) -> str | None:
+    """Return a photo URL for a destination, or None if unavailable."""
+    return await search_photo(f"{destination} India travel")

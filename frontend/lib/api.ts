@@ -193,3 +193,16 @@ export async function getJourneyVideo(mode: TravelMode): Promise<string | null> 
     return null;
   }
 }
+
+// --- Scenic background photo (plan page atmosphere) ---
+export async function getScenicPhoto(query?: string): Promise<string | null> {
+  try {
+    const q = query ? `?query=${encodeURIComponent(query)}` : "";
+    const res = await fetch(`/api/v1/scenic-photo${q}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.url ?? null;
+  } catch {
+    return null;
+  }
+}
