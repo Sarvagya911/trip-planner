@@ -58,7 +58,7 @@ export interface TripPlanRequest {
   has_pets: boolean;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8002";
+const API_BASE_URL = "";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {

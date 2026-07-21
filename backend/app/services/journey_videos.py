@@ -7,6 +7,11 @@ footage, not a real photo/video of the user's specific route, same honesty
 principle as the destination hero photos (Unsplash): atmosphere, not a
 factual claim about the actual trip.
 
+Some modes (currently "driving") use a hardcoded, human-verified clip
+instead of a live search — Pixabay's tag-based search kept surfacing
+mismatched footage (dashboards, drone shots, traffic) for "driving" despite
+matching tags, so a manually picked clip is simply more reliable here.
+
 Best-effort: any failure (no key, no results, rate limit) returns None
 rather than raising, so a missing video never breaks the page.
 """
@@ -19,11 +24,11 @@ import httpx
 
 PIXABAY_VIDEO_URL = "https://pixabay.com/api/videos/"
 
-# Search terms tuned per mode for a scenic, road/window-view feel.
-# No category filter — Pixabay's "places" category skews toward landmarks
-# and buildings, which crowds out transport-specific footage.
+MODE_FIXED_VIDEOS = {
+    "driving": "https://cdn.pixabay.com/video/2022/10/05/133699-757782422_medium.mp4",
+}
+
 MODE_QUERIES = {
-    "driving": "scenic road drive mountain",
     "bus": "bus window road travel",
     "flight": "airplane window clouds",
     "train": "train window countryside",
@@ -31,8 +36,9 @@ MODE_QUERIES = {
 
 
 async def get_mode_video(mode: str) -> str | None:
-    """Return a looping video URL (medium quality) for a travel mode, or
-    None if unavailable."""
+    if mode in MODE_FIXED_VIDEOS:
+        return MODE_FIXED_VIDEOS[mode]
+
     api_key = os.environ.get("PIXABAY_API_KEY", "")
     if not api_key:
         return None
@@ -60,7 +66,6 @@ async def get_mode_video(mode: str) -> str | None:
     if not hits:
         return None
 
-    # "medium" balances quality and file size for a looping background clip.
     videos = hits[0].get("videos", {})
     medium = videos.get("medium", {}) or videos.get("small", {})
     return medium.get("url")
