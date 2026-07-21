@@ -20,6 +20,7 @@ from app.models.conversation import (
     ConversationResponse,
 )
 from app.models.places import DestinationInfo
+from app.services.journey_videos import get_mode_video
 from app.providers.base import PartyComposition
 from app.providers.registry import build_default_registry
 from app.services.orchestrator import LegRequest, TripOrchestrator
@@ -145,23 +146,15 @@ async def conversation(req: ConversationRequest) -> ConversationResponse:
     return ConversationResponse(reply=reply, brief=brief)
 
 
+@app.get("/api/v1/journey-video")
+async def journey_video(mode: str) -> dict[str, str | None]:
+    """Returns a scenic background video URL for a travel mode (driving,
+    bus, flight, train), used for the immersive journey-progress hero.
+    Best-effort — returns {"url": null} if unavailable rather than erroring."""
+    url = await get_mode_video(mode)
+    return {"url": url}
+
+
 @app.get("/api/v1/health")
 async def health() -> dict[str, object]:
     return {"status": "ok", "modes_available": [m.value for m in registry.all_modes()]}
-
-# @app.get("/api/v1/health")
-# async def health():
-#     print("A")
-#
-#     modes = registry.all_modes()
-#
-#     print("B", modes)
-#
-#     values = [m.value for m in modes]
-#
-#     print("C", values)
-#
-#     return {
-#         "status": "ok",
-#         "modes_available": values,
-#     }

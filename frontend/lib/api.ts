@@ -181,3 +181,15 @@ export interface RestStop {
   fuel: Place | null;
   food: Place | null;
 }
+
+// --- Journey hero video ---
+export async function getJourneyVideo(mode: TravelMode): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/journey-video?mode=${mode}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.url ?? null;
+  } catch {
+    return null;
+  }
+}

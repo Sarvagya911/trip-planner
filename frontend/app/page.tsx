@@ -8,6 +8,7 @@ import { RefinePanel } from "@/components/RefinePanel";
 import { SegmentCard } from "@/components/SegmentCard";
 import { RestStopStrip } from "@/components/RestStopStrip";
 import { RouteMap } from "@/components/RouteMap";
+import { JourneyHero } from "@/components/JourneyHero";
 import { WhereToStay } from "@/components/WhereToStay";
 import {
   planTrip,
@@ -135,6 +136,10 @@ export default function Home() {
 
       {result && (
         <div className="mt-10">
+          <div className="mb-8">
+            <JourneyHero segments={result.trip.segments} departDate={activeBrief?.depart_date ?? null} />
+          </div>
+
           <h2 className="text-sm font-semibold uppercase tracking-wide text-ink-soft mb-3">
             Your itinerary
           </h2>
