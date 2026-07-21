@@ -153,7 +153,7 @@ export async function converse(req: ConversationRequest): Promise<ConversationRe
   return res.json();
 }
 
-// --- Destination enrichment (hotels) ---
+// --- Destination enrichment (hotels + photo) ---
 // Mirrors backend/app/models/places.py
 
 export interface Place {
@@ -170,6 +170,7 @@ export interface Place {
 export interface DestinationInfo {
   destination: string;
   hotels: Place[];
+  photo_url: string | null;
 }
 
 // A suggested rest stop on a long driving leg (rides in segment.provider_data.stop)

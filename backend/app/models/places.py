@@ -33,6 +33,7 @@ class DestinationInfo(BaseModel):
     """Enrichment for one destination in the trip."""
     destination: str
     hotels: list[Place] = Field(default_factory=list)
+    photo_url: str | None = None  # destination hero photo (Unsplash), best-effort
 
 
 class RestStop(BaseModel):

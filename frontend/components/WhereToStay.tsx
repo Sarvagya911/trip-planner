@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Building2, ExternalLink, Info } from "lucide-react";
 import type { DestinationInfo } from "@/lib/api";
 
@@ -18,7 +19,23 @@ export function WhereToStay({ destinations }: { destinations: DestinationInfo[] 
       <div className="space-y-6">
         {withHotels.map((dest) => (
           <div key={dest.destination}>
-            <p className="text-sm font-medium mb-2">{dest.destination}</p>
+            {dest.photo_url && (
+              <div className="relative w-full h-40 sm:h-52 rounded-xl overflow-hidden mb-3">
+                <Image
+                  src={dest.photo_url}
+                  alt={dest.destination}
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 640px) 100vw, 700px"
+                  unoptimized
+                />
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-3">
+                  <p className="text-white font-medium text-sm">{dest.destination}</p>
+                </div>
+              </div>
+            )}
+            {!dest.photo_url && <p className="text-sm font-medium mb-2">{dest.destination}</p>}
+
             <div className="grid gap-3 sm:grid-cols-2">
               {dest.hotels.map((hotel, i) => (
                 <div key={i} className="flex flex-col bg-card border border-line rounded-xl p-4">

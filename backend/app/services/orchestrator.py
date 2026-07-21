@@ -1,7 +1,8 @@
 """
 Trip orchestrator: takes an ordered list of legs, calls the right provider
 for each via the registry, stitches them into one TripSegments, and enriches
-the trip — hotels per destination, and rest/fuel/food stops on long drives.
+the trip — hotels + a destination photo, and rest/fuel/food stops on long
+drives.
 
 It never imports a concrete provider directly — only the registry.
 
@@ -18,6 +19,7 @@ from app.models.places import DestinationInfo, RestStop
 from app.models.segment import Segment, TravelMode, TripSegments
 from app.providers.base import PartyComposition
 from app.providers.registry import ProviderRegistry
+from app.services.destination_photos import get_destination_photo
 from app.services.geocoding import GeocodingError, get_geocoding_service
 from app.services.hotel_notes import annotate_hotels
 from app.services.places import get_places_service
@@ -152,10 +154,14 @@ class TripOrchestrator:
         except Exception:
             pass
 
-        return [
-            DestinationInfo(destination=dest, hotels=hotels)
-            for dest, hotels in hotels_by_dest.items()
-        ]
+        result = []
+        for dest, hotels in hotels_by_dest.items():
+            try:
+                photo = await get_destination_photo(dest)
+            except Exception:
+                photo = None
+            result.append(DestinationInfo(destination=dest, hotels=hotels, photo_url=photo))
+        return result
 
     def _check_continuity(self, segments: list[Segment]) -> list[str]:
         warnings = []

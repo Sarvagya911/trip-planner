@@ -1,4 +1,4 @@
-import { Car, Plane, TrainFront, Bus, ExternalLink } from "lucide-react";
+import { Car, Plane, TrainFront, Bus, ExternalLink, Navigation } from "lucide-react";
 import type { Segment, TravelMode, SegmentStatus } from "@/lib/api";
 
 const MODE_ICON: Record<TravelMode, React.ComponentType<{ size?: number; className?: string }>> = {
@@ -36,6 +36,14 @@ function formatDuration(hours: number | null): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+// Deep-links to Google Maps turn-by-turn directions. On iOS Safari this
+// prompts to open in Apple Maps too — no app-specific branching needed.
+function navigationLink(origin: string, destination: string): string {
+  const o = encodeURIComponent(origin);
+  const d = encodeURIComponent(destination);
+  return `https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${d}&travelmode=driving`;
+}
+
 export function SegmentCard({ segment }: { segment: Segment }) {
   const Icon = MODE_ICON[segment.mode];
   const status = STATUS_META[segment.status];
@@ -45,11 +53,13 @@ export function SegmentCard({ segment }: { segment: Segment }) {
 
   return (
     <div className="flex rounded-xl overflow-hidden border border-line bg-card shadow-sm">
+      {/* Sequence marker — this genuinely IS a sequence (real leg order), so a numbered marker is honest here, not decorative. */}
       <div className="flex flex-col items-center justify-center w-12 shrink-0 bg-ink text-paper font-mono text-sm font-semibold">
         {String(segment.order).padStart(2, "0")}
       </div>
 
       <div className="flex flex-1 flex-col sm:flex-row">
+        {/* Main info */}
         <div className="flex-1 p-4">
           <div className="flex items-center gap-2 mb-2">
             <Icon size={18} className="text-route" />
@@ -83,9 +93,11 @@ export function SegmentCard({ segment }: { segment: Segment }) {
           </div>
         </div>
 
+        {/* Perforated divider, desktop = vertical, mobile = horizontal */}
         <div className="ticket-notch w-px hidden sm:block" />
         <div className="ticket-notch h-px sm:hidden" />
 
+        {/* Cost + booking stub */}
         <div className="p-4 sm:w-48 shrink-0 flex sm:flex-col justify-between items-center sm:items-start gap-2">
           <div>
             <p className="text-xs text-ink-soft uppercase tracking-wide">Est. cost</p>
@@ -94,11 +106,18 @@ export function SegmentCard({ segment }: { segment: Segment }) {
               {segment.cost.high !== segment.cost.low && `–${Math.round(segment.cost.high)}`}
             </p>
           </div>
-          {segment.book_external_url && (
-            <a href={segment.book_external_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-route hover:underline">
-              Book <ExternalLink size={12} />
-            </a>
-          )}
+          <div className="flex flex-col gap-1.5 items-center sm:items-start">
+            {segment.mode === "driving" && (
+              <a href={navigationLink(segment.origin, segment.destination)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-route hover:underline">
+                <Navigation size={12} /> Start navigation
+              </a>
+            )}
+            {segment.book_external_url && (
+              <a href={segment.book_external_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-route hover:underline">
+                Book <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
         </div>
       </div>
     </div>

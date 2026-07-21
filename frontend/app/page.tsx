@@ -7,6 +7,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { RefinePanel } from "@/components/RefinePanel";
 import { SegmentCard } from "@/components/SegmentCard";
 import { RestStopStrip } from "@/components/RestStopStrip";
+import { RouteMap } from "@/components/RouteMap";
 import { WhereToStay } from "@/components/WhereToStay";
 import {
   planTrip,
@@ -148,6 +149,8 @@ export default function Home() {
               );
             })}
           </div>
+
+          <RouteMap segments={result.trip.segments} />
 
           <WhereToStay destinations={result.destination_info} />
 
