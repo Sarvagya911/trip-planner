@@ -15,7 +15,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-from app.models.places import DestinationInfo, RestStop
+from app.models.places import DestinationInfo, RestStop, TripBudgetEstimate
+from app.services.budget_estimate import compute_budget_estimate
 from app.models.segment import Segment, TravelMode, TripSegments
 from app.providers.base import PartyComposition
 from app.providers.registry import ProviderRegistry
@@ -40,6 +41,7 @@ class TripPlanResult:
     trip: TripSegments
     warnings: list[str] = field(default_factory=list)
     destination_info: list[DestinationInfo] = field(default_factory=list)
+    budget_estimate: TripBudgetEstimate | None = None
 
 
 class TripOrchestrator:
@@ -88,10 +90,13 @@ class TripOrchestrator:
         if include_hotels:
             destination_info = await self._enrich_destinations(segments, depart_date, party.has_pets, budget_inr)
 
+        budget_estimate = compute_budget_estimate(segments, budget_inr)
+
         return TripPlanResult(
             trip=TripSegments(segments=segments),
             warnings=warnings,
             destination_info=destination_info,
+            budget_estimate=budget_estimate,
         )
 
     async def _add_rest_stops(self, segments: list[Segment]) -> None:

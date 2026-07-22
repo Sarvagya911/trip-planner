@@ -10,6 +10,7 @@ import { RestStopStrip } from "@/components/RestStopStrip";
 import { RouteMap } from "@/components/RouteMap";
 import { JourneyHero } from "@/components/JourneyHero";
 import { WhereToStay } from "@/components/WhereToStay";
+import { BudgetSummary } from "@/components/BudgetSummary";
 import {
   planTrip,
   emptyBrief,
@@ -202,6 +203,8 @@ export default function Home() {
           <RouteMap segments={result.trip.segments} />
 
           <WhereToStay destinations={result.destination_info} />
+
+          {result.budget_estimate && <BudgetSummary estimate={result.budget_estimate} />}
 
           {result.warnings.length > 0 && (
             <div className="mt-6 bg-amber-soft border border-amber/30 rounded-lg p-4">

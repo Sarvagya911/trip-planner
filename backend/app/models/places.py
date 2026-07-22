@@ -53,3 +53,23 @@ class RestStop(BaseModel):
     fuel_cost_high: float | None = None
     meal_cost_low: float | None = None
     meal_cost_high: float | None = None
+
+
+class TripBudgetEstimate(BaseModel):
+    """A whole-trip budget summary: real travel cost (summed from the
+    planned legs) plus clearly-labeled per-night/per-day estimate bands for
+    stay and food. Never pretends to know the trip's length in nights —
+    there's no reliable data for that yet — so stay/food are shown as
+    per-unit estimates rather than multiplied into a fabricated total."""
+    travel_cost_low: float
+    travel_cost_high: float
+    stay_per_night_low: float
+    stay_per_night_high: float
+    food_per_day_low: float
+    food_per_day_high: float
+    local_transport_per_day_low: float
+    local_transport_per_day_high: float
+    budget_inr: int | None = None
+    # True only when travel cost alone already exceeds the stated budget —
+    # the one thing we CAN honestly compare without knowing trip length.
+    travel_exceeds_budget: bool = False

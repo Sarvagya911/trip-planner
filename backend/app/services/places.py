@@ -4,16 +4,22 @@ along a route, backed by Foursquare Places API.
 
 Uses only free-tier fields (name, location, geocodes) — NOT the Premium
 `rating` or `price` fields, which consume paid credits.
-
 Behind a simple interface so a different provider (Google Places, etc.)
 could be swapped in later without touching the orchestrator.
+
+Budget filtering: Foursquare's free tier has no price field, and biasing
+the search QUERY text toward "budget"/"affordable" proved unreliable in
+testing — its relevance ranking still surfaces prominent luxury chains
+(Marriott, Taj) regardless of the extra keywords. Instead, when a low
+budget is given, results are POST-FILTERED by real hotel brand name: known
+luxury chains are excluded, known budget chains are boosted to the front.
+This is a deterministic, honest signal (real, publicly-known brand market
+positioning) rather than hoping search relevance cooperates.
 
 Hotels link to a dated Booking.com search (check-in/check-out are required
 for Booking.com to actually run a search rather than show its homepage).
 Fuel/food link to a Google search, which reliably surfaces the specific
-place. Budget and pet-friendliness aren't real Foursquare filters (no
-free-tier price field, no pets attribute) — both are applied as a soft
-search-query bias instead, never a fabricated hard filter.
+place.
 """
 
 from __future__ import annotations
@@ -38,6 +44,26 @@ HOTEL_RADIUS_M = 8000
 STOP_RADIUS_M = 15000
 DEFAULT_LIMIT = 4
 
+# Real, publicly-known luxury hotel brands — excluded when a low budget is
+# given. Matched case-insensitively as a substring of the venue name.
+LUXURY_BRANDS = [
+    "taj", "oberoi", "leela", "itc", "jw marriott", "marriott", "sheraton",
+    "hyatt regency", "grand hyatt", "park hyatt", "ritz-carlton", "ritz carlton",
+    "four seasons", "st regis", "conrad", "waldorf", "shangri-la", "shangri la",
+    "trident", "westin", "le meridien", "intercontinental",
+]
+
+# Real, publicly-known budget hotel chains in India — moved to the front of
+# results when a low budget is given.
+BUDGET_BRANDS = [
+    "oyo", "fabhotel", "fabhotels", "treebo", "ginger", "spot on", "spoton",
+    "collection o", "zostel", "backpacker", "hostel", "lodge", "guest house",
+    "guesthouse",
+]
+
+# Below this per-night budget, apply the brand filter/boost.
+BUDGET_FILTER_THRESHOLD_INR = 4000
+
 
 class PlacesService:
     def __init__(self, api_key: str | None = None) -> None:
@@ -53,31 +79,26 @@ class PlacesService:
     ) -> list[Place]:
         """Find hotels near a destination. Returns [] on failure.
 
-        `pet_friendly` and `budget_inr` bias the Foursquare search query
-        toward matching stays — a soft signal, not a guaranteed filter,
-        since Foursquare's free tier has no pets-allowed or price attribute
-        to filter on directly.
+        `pet_friendly` biases the search query text (a mild, tolerable soft
+        signal). `budget_inr` below BUDGET_FILTER_THRESHOLD_INR triggers a
+        deterministic post-filter by known hotel brand name — see module
+        docstring for why this replaced query-text budget biasing.
         """
         try:
             lon, lat = await get_geocoding_service().geocode(destination)
         except GeocodingError:
             return []
 
-        terms = []
-        if budget_inr is not None:
-            # Rough per-night budget banding for Indian hotel search terms.
-            if budget_inr < 2000:
-                terms.append("budget hotel")
-            elif budget_inr < 5000:
-                terms.append("affordable hotel")
-            # Above that, no bias needed — default search already covers it.
-        if pet_friendly:
-            terms.append("pet friendly")
-        query = " ".join(terms) + " hotel" if terms else None
+        apply_budget_filter = budget_inr is not None and budget_inr <= BUDGET_FILTER_THRESHOLD_INR
+        query = "pet friendly hotel" if pet_friendly else None
+        # Over-fetch when budget-filtering, since some results get excluded.
+        raw_limit = 20 if apply_budget_filter else 10
 
-        results = await self._search(lat, lon, HOTEL_CATEGORY_ID, HOTEL_RADIUS_M, query=query)
+        results = await self._search(
+            lat, lon, HOTEL_CATEGORY_ID, HOTEL_RADIUS_M, query=query, raw_limit=raw_limit
+        )
 
-        hotels: list[Place] = []
+        candidates: list[Place] = []
         seen: set[str] = set()
         for r in results:
             name = (r.get("name") or "").strip()
@@ -86,7 +107,7 @@ class PlacesService:
             seen.add(name.lower())
             loc = r.get("location", {}) or {}
             geo = (r.get("geocodes", {}) or {}).get("main", {}) or {}
-            hotels.append(Place(
+            candidates.append(Place(
                 name=name,
                 category="hotel",
                 rating=None,
@@ -95,9 +116,11 @@ class PlacesService:
                 longitude=geo.get("longitude"),
                 book_external_url=_booking_link(name, destination, depart_date),
             ))
-            if len(hotels) >= limit:
-                break
-        return hotels
+
+        if apply_budget_filter:
+            candidates = _filter_and_rank_for_budget(candidates)
+
+        return candidates[:limit]
 
     async def find_one_near(self, lat: float, lon: float, category: str) -> Place | None:
         """Find the single nearest place of a category to a coordinate.
@@ -130,13 +153,14 @@ class PlacesService:
         radius: int,
         sort: str = "RELEVANCE",
         query: str | None = None,
+        raw_limit: int = 10,
     ) -> list[dict]:
         """Raw Foursquare search. Returns [] on any error (best-effort)."""
         params = {
             "ll": f"{lat},{lon}",
             "radius": radius,
             "fsq_category_ids": cat_id,
-            "limit": 10,
+            "limit": raw_limit,
             "sort": sort,
         }
         if query:
@@ -156,6 +180,25 @@ class PlacesService:
                 return resp.json().get("results", [])
         except httpx.HTTPError:
             return []
+
+
+def _filter_and_rank_for_budget(candidates: list[Place]) -> list[Place]:
+    """Excludes known luxury brands entirely, then sorts so known budget
+    brands come first. Anything not matching either list stays in the
+    middle, unranked — we don't know its price tier either way, so it's
+    neither excluded nor prioritized."""
+    kept = [c for c in candidates if not _matches_any(c.name, LUXURY_BRANDS)]
+
+    def sort_key(place: Place) -> int:
+        return 0 if _matches_any(place.name, BUDGET_BRANDS) else 1
+
+    kept.sort(key=sort_key)
+    return kept
+
+
+def _matches_any(name: str, brands: list[str]) -> bool:
+    lowered = name.lower()
+    return any(brand in lowered for brand in brands)
 
 
 def _booking_link(hotel_name: str, destination: str, depart_date: date | None) -> str:

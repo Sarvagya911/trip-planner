@@ -19,7 +19,8 @@ from app.models.conversation import (
     ConversationRequest,
     ConversationResponse,
 )
-from app.models.places import DestinationInfo
+from app.models.places import DestinationInfo, TripBudgetEstimate
+from app.services.budget_estimate import compute_budget_estimate
 from app.services.journey_videos import get_mode_video
 from app.services.destination_photos import search_photo
 from app.providers.base import PartyComposition
@@ -104,6 +105,7 @@ class TripPlanResponse(BaseModel):
     trip: TripSegments
     warnings: list[str]
     destination_info: list[DestinationInfo] = []
+    budget_estimate: TripBudgetEstimate | None = None
 
 
 @app.post("/api/v1/trip/plan", response_model=TripPlanResponse)
@@ -127,6 +129,7 @@ async def plan_trip(req: TripPlanRequest) -> TripPlanResponse:
         trip=result.trip,
         warnings=result.warnings,
         destination_info=result.destination_info,
+        budget_estimate=result.budget_estimate,
     )
 
 

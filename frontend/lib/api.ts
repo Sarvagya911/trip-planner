@@ -37,10 +37,24 @@ export interface TripSegments {
   segments: Segment[];
 }
 
+export interface TripBudgetEstimate {
+  travel_cost_low: number;
+  travel_cost_high: number;
+  stay_per_night_low: number;
+  stay_per_night_high: number;
+  food_per_day_low: number;
+  food_per_day_high: number;
+  local_transport_per_day_low: number;
+  local_transport_per_day_high: number;
+  budget_inr: number | null;
+  travel_exceeds_budget: boolean;
+}
+
 export interface TripPlanResponse {
   trip: TripSegments;
   warnings: string[];
   destination_info: DestinationInfo[];
+  budget_estimate: TripBudgetEstimate | null;
 }
 
 export interface LegInput {
