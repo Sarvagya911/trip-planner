@@ -19,6 +19,7 @@ interface Props {
     children: number;
     elders: number;
     hasPets: boolean;
+    budgetInr: number | null;
   }) => void;
   loading: boolean;
 }
@@ -32,6 +33,7 @@ export function TripPlannerForm({ onSubmit, loading }: Props) {
   const [children, setChildren] = useState(0);
   const [elders, setElders] = useState(0);
   const [hasPets, setHasPets] = useState(false);
+  const [budget, setBudget] = useState("");
 
   function updateLeg(index: number, patch: Partial<LegInput>) {
     setLegs((prev) => prev.map((leg, i) => (i === index ? { ...leg, ...patch } : leg)));
@@ -49,7 +51,8 @@ export function TripPlannerForm({ onSubmit, loading }: Props) {
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!departDate || legs.some((l) => !l.origin || !l.destination)) return;
-    onSubmit({ legs, departDate, adults, children, elders, hasPets });
+    const budgetInr = budget.trim() ? Number(budget) : null;
+    onSubmit({ legs, departDate, adults, children, elders, hasPets, budgetInr });
   }
 
   return (
@@ -145,6 +148,17 @@ export function TripPlannerForm({ onSubmit, loading }: Props) {
             value={elders}
             onChange={(e) => setElders(Number(e.target.value))}
             className="border border-line rounded-md px-2 py-1.5 text-sm w-16"
+          />
+        </label>
+        <label className="text-sm">
+          <span className="block text-xs text-ink-soft mb-1">Budget (INR, optional)</span>
+          <input
+            type="number"
+            min={0}
+            placeholder="e.g. 15000"
+            value={budget}
+            onChange={(e) => setBudget(e.target.value)}
+            className="border border-line rounded-md px-2 py-1.5 text-sm w-32"
           />
         </label>
         <label className="flex items-center gap-1.5 text-sm pb-1.5">

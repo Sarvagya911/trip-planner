@@ -3,18 +3,23 @@ Places service — finds hotels near a destination, and fuel/food near a point
 along a route, backed by Foursquare Places API.
 
 Uses only free-tier fields (name, location, geocodes) — NOT the Premium
-`rating` field, which consumes paid credits.
+`rating` or `price` fields, which consume paid credits.
 
 Behind a simple interface so a different provider (Google Places, etc.)
 could be swapped in later without touching the orchestrator.
 
-Finding is external: places link to a Google search that reliably surfaces
-the specific place with map/booking options.
+Hotels link to a dated Booking.com search (check-in/check-out are required
+for Booking.com to actually run a search rather than show its homepage).
+Fuel/food link to a Google search, which reliably surfaces the specific
+place. Budget and pet-friendliness aren't real Foursquare filters (no
+free-tier price field, no pets attribute) — both are applied as a soft
+search-query bias instead, never a fabricated hard filter.
 """
 
 from __future__ import annotations
 
 import os
+from datetime import date, timedelta
 from urllib.parse import quote_plus
 
 import httpx
@@ -38,13 +43,40 @@ class PlacesService:
     def __init__(self, api_key: str | None = None) -> None:
         self.api_key = api_key or os.environ.get("FOURSQUARE_API_KEY", "")
 
-    async def find_hotels(self, destination: str, limit: int = DEFAULT_LIMIT) -> list[Place]:
-        """Find hotels near a destination (by name). Returns [] on failure."""
+    async def find_hotels(
+        self,
+        destination: str,
+        limit: int = DEFAULT_LIMIT,
+        depart_date: date | None = None,
+        pet_friendly: bool = False,
+        budget_inr: int | None = None,
+    ) -> list[Place]:
+        """Find hotels near a destination. Returns [] on failure.
+
+        `pet_friendly` and `budget_inr` bias the Foursquare search query
+        toward matching stays — a soft signal, not a guaranteed filter,
+        since Foursquare's free tier has no pets-allowed or price attribute
+        to filter on directly.
+        """
         try:
             lon, lat = await get_geocoding_service().geocode(destination)
         except GeocodingError:
             return []
-        results = await self._search(lat, lon, HOTEL_CATEGORY_ID, HOTEL_RADIUS_M)
+
+        terms = []
+        if budget_inr is not None:
+            # Rough per-night budget banding for Indian hotel search terms.
+            if budget_inr < 2000:
+                terms.append("budget hotel")
+            elif budget_inr < 5000:
+                terms.append("affordable hotel")
+            # Above that, no bias needed — default search already covers it.
+        if pet_friendly:
+            terms.append("pet friendly")
+        query = " ".join(terms) + " hotel" if terms else None
+
+        results = await self._search(lat, lon, HOTEL_CATEGORY_ID, HOTEL_RADIUS_M, query=query)
+
         hotels: list[Place] = []
         seen: set[str] = set()
         for r in results:
@@ -61,7 +93,7 @@ class PlacesService:
                 address=loc.get("formatted_address") or loc.get("address"),
                 latitude=geo.get("latitude"),
                 longitude=geo.get("longitude"),
-                book_external_url=_google_find_link(name, destination),
+                book_external_url=_booking_link(name, destination, depart_date),
             ))
             if len(hotels) >= limit:
                 break
@@ -90,19 +122,30 @@ class PlacesService:
             )
         return None
 
-    async def _search(self, lat: float, lon: float, cat_id: str, radius: int, sort: str = "RELEVANCE") -> list[dict]:
+    async def _search(
+        self,
+        lat: float,
+        lon: float,
+        cat_id: str,
+        radius: int,
+        sort: str = "RELEVANCE",
+        query: str | None = None,
+    ) -> list[dict]:
         """Raw Foursquare search. Returns [] on any error (best-effort)."""
+        params = {
+            "ll": f"{lat},{lon}",
+            "radius": radius,
+            "fsq_category_ids": cat_id,
+            "limit": 10,
+            "sort": sort,
+        }
+        if query:
+            params["query"] = query
         try:
             async with httpx.AsyncClient(timeout=20.0) as client:
                 resp = await client.get(
                     FSQ_SEARCH_URL,
-                    params={
-                        "ll": f"{lat},{lon}",
-                        "radius": radius,
-                        "fsq_category_ids": cat_id,
-                        "limit": 10,
-                        "sort": sort,
-                    },
+                    params=params,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
                         "X-Places-Api-Version": FSQ_API_VERSION,
@@ -113,6 +156,20 @@ class PlacesService:
                 return resp.json().get("results", [])
         except httpx.HTTPError:
             return []
+
+
+def _booking_link(hotel_name: str, destination: str, depart_date: date | None) -> str:
+    """Booking.com requires check-in/check-out dates to run an actual
+    search rather than show its homepage. Defaults to a 1-night stay
+    starting at the trip's departure date if no return date is known."""
+    checkin = depart_date or (date.today() + timedelta(days=7))
+    checkout = checkin + timedelta(days=1)
+    q = quote_plus(f"{hotel_name} {destination}")
+    return (
+        f"https://www.booking.com/searchresults.html?ss={q}"
+        f"&checkin={checkin.isoformat()}&checkout={checkout.isoformat()}"
+        f"&group_adults=2&no_rooms=1"
+    )
 
 
 def _google_find_link(name: str, context: str) -> str:

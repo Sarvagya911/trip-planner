@@ -56,6 +56,7 @@ export interface TripPlanRequest {
   children: number;
   elders: number;
   has_pets: boolean;
+  budget_inr?: number | null;
 }
 
 const API_BASE_URL = "";
@@ -180,6 +181,10 @@ export interface RestStop {
   near_longitude: number;
   fuel: Place | null;
   food: Place | null;
+  fuel_cost_low: number | null;
+  fuel_cost_high: number | null;
+  meal_cost_low: number | null;
+  meal_cost_high: number | null;
 }
 
 // --- Journey hero video ---

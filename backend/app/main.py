@@ -97,6 +97,7 @@ class TripPlanRequest(BaseModel):
     children: int = 0
     elders: int = 0
     has_pets: bool = False
+    budget_inr: int | None = None
 
 
 class TripPlanResponse(BaseModel):
@@ -118,7 +119,7 @@ async def plan_trip(req: TripPlanRequest) -> TripPlanResponse:
     legs = [LegRequest(mode=leg.mode, origin=leg.origin, destination=leg.destination) for leg in req.legs]
 
     try:
-        result = await orchestrator.plan_trip(legs, req.depart_date, party)
+        result = await orchestrator.plan_trip(legs, req.depart_date, party, budget_inr=req.budget_inr)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

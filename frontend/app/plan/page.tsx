@@ -50,6 +50,7 @@ export default function Home() {
         children: brief.children,
         elders: brief.elders,
         has_pets: brief.has_pets,
+        budget_inr: brief.budget_inr,
       });
       setResult(res);
       setActiveBrief(brief);
@@ -72,6 +73,7 @@ export default function Home() {
     children: number;
     elders: number;
     hasPets: boolean;
+    budgetInr: number | null;
   }) {
     const brief: TripBrief = {
       ...emptyBrief(),
@@ -81,6 +83,7 @@ export default function Home() {
       children: params.children,
       elders: params.elders,
       has_pets: params.hasPets,
+      budget_inr: params.budgetInr,
       proposed_legs: params.legs,
       destinations: params.legs.map((l) => l.destination),
       ready: true,

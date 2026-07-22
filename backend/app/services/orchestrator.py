@@ -47,11 +47,12 @@ class TripOrchestrator:
         self.registry = registry
 
     async def plan_trip(
-        self,
-        legs: list[LegRequest],
-        depart_date: date,
-        party: PartyComposition,
-        include_hotels: bool = True,
+            self,
+            legs: list[LegRequest],
+            depart_date: date,
+            party: PartyComposition,
+            include_hotels: bool = True,
+            budget_inr: int | None = None,
     ) -> TripPlanResult:
         if not legs:
             raise ValueError("a trip must have at least one leg")
@@ -85,7 +86,7 @@ class TripOrchestrator:
 
         destination_info: list[DestinationInfo] = []
         if include_hotels:
-            destination_info = await self._enrich_destinations(segments)
+            destination_info = await self._enrich_destinations(segments, depart_date, party.has_pets, budget_inr)
 
         return TripPlanResult(
             trip=TripSegments(segments=segments),
@@ -95,7 +96,9 @@ class TripOrchestrator:
 
     async def _add_rest_stops(self, segments: list[Segment]) -> None:
         """For each long driving leg, find a fuel + food option near the
-        route midpoint and attach it to the segment's provider_data['stop'].
+        route midpoint and attach it to the segment's provider_data['stop'],
+        along with rough cost estimates for fuel (distance-based, same rate
+        as the leg's own fuel estimate) and a meal (flat regional band).
         Best-effort: silently skips on any failure."""
         geo = get_geocoding_service()
         places = get_places_service()
@@ -117,17 +120,36 @@ class TripOrchestrator:
             if not fuel and not food:
                 continue
 
+            # A rest stop isn't a full tank — rough estimate of what a
+            # traveler spends topping up at this one stop, not the whole
+            # trip's fuel. ~30% of the leg's total estimated fuel cost.
+            leg_fuel_low = seg.cost.low if fuel else None
+            leg_fuel_high = seg.cost.high if fuel else None
+            stop_fuel_low = round(leg_fuel_low * 0.3, -1) if leg_fuel_low else None
+            stop_fuel_high = round(leg_fuel_high * 0.3, -1) if leg_fuel_high else None
+
+            # Flat regional estimate for a roadside meal in India — a rough
+            # band, not a per-venue price (Foursquare doesn't provide one
+            # on the free tier).
+            meal_low, meal_high = (150.0, 400.0) if food else (None, None)
+
             stop = RestStop(
                 label="Around the halfway point",
                 near_latitude=mid_lat,
                 near_longitude=mid_lon,
                 fuel=fuel,
                 food=food,
+                fuel_cost_low=stop_fuel_low,
+                fuel_cost_high=stop_fuel_high,
+                meal_cost_low=meal_low,
+                meal_cost_high=meal_high,
             )
             # Attach without touching the Segment schema: ride in provider_data.
             seg.provider_data["stop"] = stop.model_dump()
 
-    async def _enrich_destinations(self, segments: list[Segment]) -> list[DestinationInfo]:
+    async def _enrich_destinations(
+            self, segments: list[Segment], depart_date: date, has_pets: bool, budget_inr: int | None = None
+    ) -> list[DestinationInfo]:
         home = segments[0].origin.strip().lower()
         seen: set[str] = set()
         destinations: list[str] = []
@@ -142,7 +164,9 @@ class TripOrchestrator:
         places = get_places_service()
         hotels_by_dest: dict[str, list] = {}
         for dest in destinations:
-            hotels = await places.find_hotels(dest)
+            hotels = await places.find_hotels(
+                dest, depart_date=depart_date, pet_friendly=has_pets, budget_inr=budget_inr
+            )
             if hotels:
                 hotels_by_dest[dest] = hotels
 
@@ -180,3 +204,7 @@ class TripOrchestrator:
 #   - Multiple stops on very long drives (every ~2.5h) instead of one midpoint
 #   - Per-leg departure dates
 #   - Restaurant enrichment at destinations
+#   - Numeric budget filtering needs a budget_inr field threaded from
+#     TripPlanRequest through to here — not yet wired (Foursquare has no
+#     free price field to filter on anyway, so this would still only be a
+#     soft query bias like pet_friendly, not a hard filter)
